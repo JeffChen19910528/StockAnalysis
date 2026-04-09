@@ -1,7 +1,10 @@
 import os
 import json
 import requests
+import urllib3
 import numpy as np
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
@@ -31,7 +34,7 @@ def get_all_tw_stocks():
     try:
         r = requests.get(
             "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
-            timeout=12, headers=headers
+            timeout=12, headers=headers, verify=False
         )
         if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
             for item in r.json():
@@ -46,7 +49,7 @@ def get_all_tw_stocks():
     try:
         r = requests.get(
             "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes",
-            timeout=12, headers=headers
+            timeout=12, headers=headers, verify=False
         )
         if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
             for item in r.json():
@@ -66,7 +69,17 @@ def search_stocks(keyword: str):
     if not keyword:
         return []
     stocks = get_all_tw_stocks()
+
+    def relevance(s):
+        code, name = s["code"], s["name"]
+        if code == keyword or name == keyword:
+            return 0  # 完全符合
+        if code.startswith(keyword) or name.startswith(keyword):
+            return 1  # 前綴符合
+        return 2      # 包含
+
     results = [s for s in stocks if keyword in s["code"] or keyword in s["name"]]
+    results.sort(key=relevance)
     return results[:20]
 
 
