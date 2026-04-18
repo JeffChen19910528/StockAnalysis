@@ -371,6 +371,129 @@ main {
   .stock-header { flex-direction: column; }
   .price-wrap { text-align: left; }
 }
+
+/* ── 產業分類列 ── */
+.sector-browse {
+  max-width: 680px;
+  margin: 10px auto 0;
+  padding: 0 16px;
+}
+.sector-browse-box {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.sector-pills-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s;
+}
+.sector-pills-bar.has-active { border-color: var(--border); }
+.sector-label {
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--text-s);
+  white-space: nowrap;
+  margin-right: 12px;
+  flex-shrink: 0;
+  letter-spacing: .04em;
+}
+.sector-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 13px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  font-size: .8rem;
+  cursor: pointer;
+  transition: all .18s;
+  color: var(--text);
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sector-pill:hover  { background: var(--primary-l); border-color: var(--primary); color: var(--primary); }
+.sector-pill.active { background: var(--primary);   border-color: var(--primary); color: #fff; }
+
+/* 股票清單展開面板 */
+.sector-stock-panel {
+  display: none;
+  padding: 12px 14px;
+  animation: fadeIn .18s ease;
+}
+.sector-stock-panel.open { display: block; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+.sector-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sector-panel-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text-s);
+}
+.sector-panel-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-s);
+  font-size: .85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: background .15s;
+}
+.sector-panel-close:hover { background: var(--border); }
+.sector-stocks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sector-stock-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.sector-stock-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-l);
+}
+.sector-stock-info { flex: 1; min-width: 0; }
+.sector-stock-code { font-size: .82rem; font-weight: 700; color: var(--primary); }
+.sector-stock-name {
+  font-size: .76rem; color: var(--text-s);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.btn-analyze-sector {
+  background: var(--primary); color: #fff; border: none;
+  border-radius: 6px; padding: 5px 10px; font-size: .75rem;
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+  transition: background .18s; flex-shrink: 0;
+}
+.btn-analyze-sector:hover { background: #1e40af; }
+.sector-grid-msg {
+  grid-column: 1/-1; text-align: center;
+  padding: 20px; color: var(--text-s); font-size: .88rem;
+}
 </style>
 </head>
 <body>
@@ -391,6 +514,23 @@ main {
     <button class="btn-search" onclick="triggerSearch()">分析</button>
   </div>
   <div class="dropdown" id="dropdown"></div>
+</div>
+
+<!-- 產業分類快捷列（常駐顯示） -->
+<div class="sector-browse">
+  <div class="sector-browse-box">
+    <div class="sector-pills-bar" id="sectorPillsBar">
+      <span class="sector-label">📊 產業分類</span>
+      <span style="font-size:.78rem;color:var(--text-s)">載入中…</span>
+    </div>
+    <div class="sector-stock-panel" id="sectorStockPanel">
+      <div class="sector-panel-header">
+        <span class="sector-panel-title" id="sectorPanelTitle"></span>
+        <button class="sector-panel-close" onclick="closeSectorPanel()">✕ 收起</button>
+      </div>
+      <div class="sector-stocks-grid" id="sectorStocksGrid"></div>
+    </div>
+  </div>
 </div>
 
 <main>
@@ -910,6 +1050,94 @@ function rsiClass(v) {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ────────── 產業分類 ──────────
+let activeSector = null;
+
+// 頁面載入後自動拉取產業列表
+window.addEventListener('DOMContentLoaded', () => loadSectorPills());
+
+async function loadSectorPills() {
+  const bar = document.getElementById('sectorPillsBar');
+  try {
+    const res  = await fetch(`/api/sectors?market=${currentMarket}`);
+    const json = await res.json();
+    renderSectorPills(json.sectors || []);
+  } catch(e) {
+    bar.innerHTML = '<span class="sector-label">📊 產業分類</span><span style="font-size:.78rem;color:var(--text-s)">無法載入</span>';
+  }
+}
+
+function renderSectorPills(sectors) {
+  const bar = document.getElementById('sectorPillsBar');
+  bar.innerHTML = `<span class="sector-label">📊 產業分類</span>` +
+    sectors.map(s =>
+      `<button class="sector-pill" onclick="selectSector('${escHtml(s)}')">${escHtml(s)}</button>`
+    ).join('');
+}
+
+async function selectSector(sector) {
+  // 同一個 pill 再點一次 → 收起
+  if (activeSector === sector) { closeSectorPanel(); return; }
+  activeSector = sector;
+
+  document.querySelectorAll('.sector-pill').forEach(b =>
+    b.classList.toggle('active', b.textContent === sector)
+  );
+  document.getElementById('sectorPillsBar').classList.add('has-active');
+  document.getElementById('sectorPanelTitle').textContent = `${sector} 類股`;
+
+  const panel = document.getElementById('sectorStockPanel');
+  panel.classList.add('open');
+
+  const grid = document.getElementById('sectorStocksGrid');
+  grid.innerHTML = '<div class="sector-grid-msg">載入中…</div>';
+
+  try {
+    const res  = await fetch(`/api/sector_stocks?market=${currentMarket}&sector=${encodeURIComponent(sector)}`);
+    const json = await res.json();
+    renderSectorStocks(json.results || []);
+  } catch(e) {
+    grid.innerHTML = '<div class="sector-grid-msg">無法載入股票清單</div>';
+  }
+}
+
+function closeSectorPanel() {
+  activeSector = null;
+  document.querySelectorAll('.sector-pill').forEach(b => b.classList.remove('active'));
+  document.getElementById('sectorPillsBar').classList.remove('has-active');
+  document.getElementById('sectorStockPanel').classList.remove('open');
+}
+
+function renderSectorStocks(stocks) {
+  const grid = document.getElementById('sectorStocksGrid');
+  if (!stocks.length) {
+    grid.innerHTML = '<div class="sector-grid-msg">此類別目前無資料</div>';
+    return;
+  }
+  grid.innerHTML = stocks.map(s => `
+    <div class="sector-stock-card" onclick="sectorAnalyze('${escHtml(s.ticker)}','${escHtml(s.name)}')">
+      <div class="sector-stock-info">
+        <div class="sector-stock-code">${escHtml(s.code)}</div>
+        <div class="sector-stock-name" title="${escHtml(s.name)}">${escHtml(s.name)}</div>
+      </div>
+      <button class="btn-analyze-sector">分析</button>
+    </div>`).join('');
+}
+
+function sectorAnalyze(ticker, name) {
+  document.getElementById('searchInput').value = `${ticker.replace(/\.(TW|TWO)$/, '')} ${name}`;
+  closeSectorPanel();
+  analyzeStock(ticker, name);
+}
+
+// 切換市場時重置並重新載入產業 pills
+const _origSwitchMarket = switchMarket;
+switchMarket = function(market) {
+  _origSwitchMarket(market);
+  closeSectorPanel();
+  loadSectorPills();
+};
 </script>
 </body>
 </html>

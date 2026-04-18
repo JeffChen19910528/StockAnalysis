@@ -10,6 +10,7 @@
 |------|------|
 | 🔍 智能搜尋 | 台股：輸入代碼（`2330`）或名稱（`台積`）；美股：輸入代碼（`AAPL`）或公司名（`Apple`） |
 | 🌐 雙市場切換 | 頁面頂端切換 🇹🇼 台股 / 🇺🇸 美股，自動調整顏色慣例、幣別顯示與分析閾值 |
+| 🗂 產業分類瀏覽 | 搜尋框下方常駐顯示產業 pill 列；點擊任一類別展開該類股清單，一鍵觸發分析 |
 | 📊 技術分析 | RSI(14)、MACD(12/26/9)、MA5/MA20/MA60、布林通道、支撐壓力位、量價分析 |
 | 💰 基本面分析 | 本益比(P/E)、股價淨值比(P/B)、ROE、殖利率、EPS、營收成長率 |
 | 📈 互動圖表 | 價格走勢+均線、布林通道、RSI 圖、MACD 直條圖、成交量圖（可切換） |
@@ -30,13 +31,17 @@
 
 ## 快速開始
 
-### 方法一：雙擊啟動腳本（Windows）
+### 方法一：使用啟動腳本（建議）
 
-```
-雙擊 start.bat
+```bash
+# Windows — 雙擊或在 cmd 執行
+start.bat
+
+# macOS / Linux
+./start.sh
 ```
 
-腳本會自動：建立虛擬環境 → 安裝相依套件 → 啟動伺服器。
+腳本會自動：**終止 port 5000 上的舊進程** → 建立虛擬環境 → 安裝相依套件 → 啟動伺服器。
 
 > **注意**：`start.bat` 採純 ASCII 英文撰寫，確保在各種 Windows 語系下皆可正常執行，不會因編碼問題導致指令解析失敗。
 
@@ -91,7 +96,8 @@ ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxx
 StockAnalysis/
 ├── app.py                  # Flask 後端（路由、資料擷取、技術指標、AI 分析）
 ├── requirements.txt        # Python 相依套件清單
-├── start.bat               # Windows 一鍵啟動腳本
+├── start.bat               # Windows 一鍵啟動腳本（自動終止舊進程）
+├── start.sh                # macOS / Linux 一鍵啟動腳本（自動終止舊進程）
 ├── .env.example            # 環境變數範本
 ├── .env                    # 實際環境變數（請勿上傳至版控）
 ├── templates/
@@ -110,6 +116,8 @@ StockAnalysis/
 | `/api/search` | GET | `q` | 台股搜尋（TWSE + TPEX） |
 | `/api/search_us` | GET | `q` | 美股搜尋（代理 Yahoo Finance） |
 | `/api/analyze` | GET | `ticker`, `name`, `market` (`tw`\|`us`) | 取得並分析指定股票 |
+| `/api/sectors` | GET | `market` (`tw`\|`us`) | 取得指定市場的產業分類列表 |
+| `/api/sector_stocks` | GET | `market`, `sector` | 取得指定產業的股票清單 |
 
 ---
 
@@ -119,7 +127,9 @@ StockAnalysis/
 |------|------|
 | 上市股票清單 | [TWSE OpenAPI](https://openapi.twse.com.tw) `STOCK_DAY_ALL` |
 | 上櫃股票清單 | [TPEX OpenAPI](https://www.tpex.org.tw/openapi) `tpex_mainboard_quotes` |
+| 台股產業分類 | TWSE `t187ap03_L`（上市）、TPEX `mopsfin_t187ap03_O`（上櫃） |
 | 美股搜尋 | Yahoo Finance Search API（`/v1/finance/search`，限 US 交易所） |
+| 美股產業分類 | 內建 11 個 GICS 產業，各含 ~10 代表性個股 |
 | 歷史股價 / 基本面 | [yfinance](https://pypi.org/project/yfinance/)（台股加 `.TW` / `.TWO`；美股直接使用原始代碼） |
 | AI 投資建議 | [Anthropic Claude API](https://www.anthropic.com) `claude-sonnet-4-6` |
 
@@ -127,17 +137,21 @@ StockAnalysis/
 
 ## 使用說明
 
-### 台股
+### 方式一：關鍵字搜尋
 
-1. 點選頁面頂端 🇹🇼 **台股** 按鈕（預設）
-2. 在搜尋框輸入股票代碼（如 `2330`）或公司名稱關鍵字（如 `台積電`、`聯發`）
-3. 從下拉清單點選目標股票，或直接按 Enter 以代碼搜尋
+- **台股**：輸入代碼（如 `2330`）或名稱關鍵字（如 `台積電`），從下拉清單選取，或直接按 Enter
+- **美股**：輸入代碼（如 `AAPL`）或名稱（如 `Apple`），從下拉清單選取
 
-### 美股
+### 方式二：產業分類瀏覽
 
-1. 點選頁面頂端 🇺🇸 **美股** 按鈕
-2. 在搜尋框輸入股票代碼（如 `AAPL`、`TSLA`）或公司名稱關鍵字（如 `Apple`、`Tesla`）
-3. 從下拉清單點選目標股票
+搜尋框正下方常駐顯示「📊 產業分類」pill 列：
+
+1. 點選任一產業類別（如「半導體」、「科技」）
+2. 下方展開該產業的股票清單
+3. 點選任一股票卡片 → 直接觸發完整分析
+4. 點擊同一 pill 或按 **✕ 收起** 關閉清單
+
+> 台股產業類別從 TWSE/TPEX API 動態載入；美股為 11 個 GICS 產業（科技、金融、醫療保健…）。
 
 ### 查看分析結果
 
@@ -154,6 +168,12 @@ StockAnalysis/
 
 **Q：雙擊 `start.bat` 出現 `'orlevel' 不是內部或外部命令`？**
 A：這是舊版 `start.bat` 含有中文字元、Windows cmd.exe 編碼解析失敗的問題。請確認使用最新版的 `start.bat`（純 ASCII 英文版本）。
+
+**Q：重新執行 `start.bat` 後出現 port 已被占用的錯誤？**
+A：最新版 `start.bat` / `start.sh` 會在啟動前自動偵測並終止 port 5000 上的舊進程，不需要手動關閉。若仍失敗，請手動執行 `taskkill //F //IM python.exe`（Windows）。
+
+**Q：產業分類 pill 列沒有顯示？**
+A：台股產業資料從 TWSE API 動態載入，需要網路連線。若頁面顯示「無法載入」，確認 TWSE API 可連線後重新整理頁面。
 
 **Q：出現 `Permission denied: venv\Scripts\python.exe`？**
 A：通常是 Windows Defender 或防毒軟體即時掃描導致。請稍等幾秒後重試，或將專案資料夾加入防毒軟體例外清單。

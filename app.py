@@ -21,6 +21,190 @@ anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
 # ─── 台股清單快取 ────────────────────────────────────────────────────────────────
 _stock_cache = None
+_sector_cache_tw = None  # dict: {sector_name: [{code, name, ticker, market}]}
+
+# ─── 美股預設產業清單 ─────────────────────────────────────────────────────────────
+US_SECTORS = {
+    "科技": [
+        {"code": "AAPL", "name": "Apple",        "ticker": "AAPL", "market": "股票"},
+        {"code": "MSFT", "name": "Microsoft",     "ticker": "MSFT", "market": "股票"},
+        {"code": "NVDA", "name": "NVIDIA",        "ticker": "NVDA", "market": "股票"},
+        {"code": "AVGO", "name": "Broadcom",      "ticker": "AVGO", "market": "股票"},
+        {"code": "ORCL", "name": "Oracle",        "ticker": "ORCL", "market": "股票"},
+        {"code": "AMD",  "name": "AMD",           "ticker": "AMD",  "market": "股票"},
+        {"code": "INTC", "name": "Intel",         "ticker": "INTC", "market": "股票"},
+        {"code": "CRM",  "name": "Salesforce",    "ticker": "CRM",  "market": "股票"},
+        {"code": "NOW",  "name": "ServiceNow",    "ticker": "NOW",  "market": "股票"},
+        {"code": "PLTR", "name": "Palantir",      "ticker": "PLTR", "market": "股票"},
+    ],
+    "通訊服務": [
+        {"code": "GOOGL","name": "Alphabet",      "ticker": "GOOGL","market": "股票"},
+        {"code": "META", "name": "Meta",          "ticker": "META", "market": "股票"},
+        {"code": "NFLX", "name": "Netflix",       "ticker": "NFLX", "market": "股票"},
+        {"code": "DIS",  "name": "Disney",        "ticker": "DIS",  "market": "股票"},
+        {"code": "CMCSA","name": "Comcast",       "ticker": "CMCSA","market": "股票"},
+        {"code": "T",    "name": "AT&T",          "ticker": "T",    "market": "股票"},
+        {"code": "VZ",   "name": "Verizon",       "ticker": "VZ",   "market": "股票"},
+        {"code": "SNAP", "name": "Snap",          "ticker": "SNAP", "market": "股票"},
+        {"code": "RBLX", "name": "Roblox",        "ticker": "RBLX", "market": "股票"},
+        {"code": "SPOT", "name": "Spotify",       "ticker": "SPOT", "market": "股票"},
+    ],
+    "醫療保健": [
+        {"code": "UNH",  "name": "UnitedHealth",  "ticker": "UNH",  "market": "股票"},
+        {"code": "LLY",  "name": "Eli Lilly",     "ticker": "LLY",  "market": "股票"},
+        {"code": "JNJ",  "name": "J&J",           "ticker": "JNJ",  "market": "股票"},
+        {"code": "MRK",  "name": "Merck",         "ticker": "MRK",  "market": "股票"},
+        {"code": "ABBV", "name": "AbbVie",        "ticker": "ABBV", "market": "股票"},
+        {"code": "TMO",  "name": "Thermo Fisher", "ticker": "TMO",  "market": "股票"},
+        {"code": "ABT",  "name": "Abbott",        "ticker": "ABT",  "market": "股票"},
+        {"code": "DHR",  "name": "Danaher",       "ticker": "DHR",  "market": "股票"},
+        {"code": "BMY",  "name": "Bristol-Myers", "ticker": "BMY",  "market": "股票"},
+        {"code": "PFE",  "name": "Pfizer",        "ticker": "PFE",  "market": "股票"},
+    ],
+    "金融": [
+        {"code": "JPM",  "name": "JPMorgan",      "ticker": "JPM",  "market": "股票"},
+        {"code": "BAC",  "name": "Bank of America","ticker": "BAC", "market": "股票"},
+        {"code": "WFC",  "name": "Wells Fargo",   "ticker": "WFC",  "market": "股票"},
+        {"code": "GS",   "name": "Goldman Sachs", "ticker": "GS",   "market": "股票"},
+        {"code": "MS",   "name": "Morgan Stanley","ticker": "MS",   "market": "股票"},
+        {"code": "BLK",  "name": "BlackRock",     "ticker": "BLK",  "market": "股票"},
+        {"code": "V",    "name": "Visa",          "ticker": "V",    "market": "股票"},
+        {"code": "MA",   "name": "Mastercard",    "ticker": "MA",   "market": "股票"},
+        {"code": "AXP",  "name": "Amex",          "ticker": "AXP",  "market": "股票"},
+        {"code": "C",    "name": "Citigroup",     "ticker": "C",    "market": "股票"},
+    ],
+    "非必需消費品": [
+        {"code": "AMZN", "name": "Amazon",        "ticker": "AMZN", "market": "股票"},
+        {"code": "TSLA", "name": "Tesla",         "ticker": "TSLA", "market": "股票"},
+        {"code": "HD",   "name": "Home Depot",    "ticker": "HD",   "market": "股票"},
+        {"code": "MCD",  "name": "McDonald's",    "ticker": "MCD",  "market": "股票"},
+        {"code": "NKE",  "name": "Nike",          "ticker": "NKE",  "market": "股票"},
+        {"code": "SBUX", "name": "Starbucks",     "ticker": "SBUX", "market": "股票"},
+        {"code": "TGT",  "name": "Target",        "ticker": "TGT",  "market": "股票"},
+        {"code": "LOW",  "name": "Lowe's",        "ticker": "LOW",  "market": "股票"},
+        {"code": "BKNG", "name": "Booking",       "ticker": "BKNG", "market": "股票"},
+        {"code": "ABNB", "name": "Airbnb",        "ticker": "ABNB", "market": "股票"},
+    ],
+    "必需消費品": [
+        {"code": "PG",   "name": "Procter & Gamble","ticker": "PG", "market": "股票"},
+        {"code": "KO",   "name": "Coca-Cola",     "ticker": "KO",   "market": "股票"},
+        {"code": "PEP",  "name": "PepsiCo",       "ticker": "PEP",  "market": "股票"},
+        {"code": "WMT",  "name": "Walmart",       "ticker": "WMT",  "market": "股票"},
+        {"code": "COST", "name": "Costco",        "ticker": "COST", "market": "股票"},
+        {"code": "PM",   "name": "Philip Morris", "ticker": "PM",   "market": "股票"},
+        {"code": "MDLZ", "name": "Mondelez",      "ticker": "MDLZ", "market": "股票"},
+        {"code": "CL",   "name": "Colgate",       "ticker": "CL",   "market": "股票"},
+        {"code": "GIS",  "name": "General Mills", "ticker": "GIS",  "market": "股票"},
+        {"code": "KR",   "name": "Kroger",        "ticker": "KR",   "market": "股票"},
+    ],
+    "能源": [
+        {"code": "XOM",  "name": "ExxonMobil",    "ticker": "XOM",  "market": "股票"},
+        {"code": "CVX",  "name": "Chevron",       "ticker": "CVX",  "market": "股票"},
+        {"code": "COP",  "name": "ConocoPhillips","ticker": "COP",  "market": "股票"},
+        {"code": "EOG",  "name": "EOG Resources", "ticker": "EOG",  "market": "股票"},
+        {"code": "SLB",  "name": "SLB",           "ticker": "SLB",  "market": "股票"},
+        {"code": "OXY",  "name": "Occidental",    "ticker": "OXY",  "market": "股票"},
+        {"code": "VLO",  "name": "Valero",        "ticker": "VLO",  "market": "股票"},
+        {"code": "MPC",  "name": "Marathon",      "ticker": "MPC",  "market": "股票"},
+        {"code": "PSX",  "name": "Phillips 66",   "ticker": "PSX",  "market": "股票"},
+        {"code": "HAL",  "name": "Halliburton",   "ticker": "HAL",  "market": "股票"},
+    ],
+    "工業": [
+        {"code": "BA",   "name": "Boeing",        "ticker": "BA",   "market": "股票"},
+        {"code": "CAT",  "name": "Caterpillar",   "ticker": "CAT",  "market": "股票"},
+        {"code": "GE",   "name": "GE",            "ticker": "GE",   "market": "股票"},
+        {"code": "HON",  "name": "Honeywell",     "ticker": "HON",  "market": "股票"},
+        {"code": "UPS",  "name": "UPS",           "ticker": "UPS",  "market": "股票"},
+        {"code": "RTX",  "name": "RTX",           "ticker": "RTX",  "market": "股票"},
+        {"code": "MMM",  "name": "3M",            "ticker": "MMM",  "market": "股票"},
+        {"code": "DE",   "name": "Deere",         "ticker": "DE",   "market": "股票"},
+        {"code": "LMT",  "name": "Lockheed",      "ticker": "LMT",  "market": "股票"},
+        {"code": "FDX",  "name": "FedEx",         "ticker": "FDX",  "market": "股票"},
+    ],
+    "原材料": [
+        {"code": "LIN",  "name": "Linde",         "ticker": "LIN",  "market": "股票"},
+        {"code": "APD",  "name": "Air Products",  "ticker": "APD",  "market": "股票"},
+        {"code": "ECL",  "name": "Ecolab",        "ticker": "ECL",  "market": "股票"},
+        {"code": "NEM",  "name": "Newmont",       "ticker": "NEM",  "market": "股票"},
+        {"code": "FCX",  "name": "Freeport",      "ticker": "FCX",  "market": "股票"},
+        {"code": "NUE",  "name": "Nucor",         "ticker": "NUE",  "market": "股票"},
+        {"code": "PPG",  "name": "PPG Ind.",      "ticker": "PPG",  "market": "股票"},
+        {"code": "VMC",  "name": "Vulcan",        "ticker": "VMC",  "market": "股票"},
+        {"code": "MLM",  "name": "Martin Marietta","ticker": "MLM", "market": "股票"},
+        {"code": "DOW",  "name": "Dow Inc.",      "ticker": "DOW",  "market": "股票"},
+    ],
+    "不動產": [
+        {"code": "AMT",  "name": "American Tower","ticker": "AMT",  "market": "股票"},
+        {"code": "PLD",  "name": "Prologis",      "ticker": "PLD",  "market": "股票"},
+        {"code": "CCI",  "name": "Crown Castle",  "ticker": "CCI",  "market": "股票"},
+        {"code": "EQIX", "name": "Equinix",       "ticker": "EQIX", "market": "股票"},
+        {"code": "DLR",  "name": "Digital Realty","ticker": "DLR",  "market": "股票"},
+        {"code": "PSA",  "name": "Public Storage","ticker": "PSA",  "market": "股票"},
+        {"code": "O",    "name": "Realty Income", "ticker": "O",    "market": "股票"},
+        {"code": "WELL", "name": "Welltower",     "ticker": "WELL", "market": "股票"},
+        {"code": "SPG",  "name": "Simon Property","ticker": "SPG",  "market": "股票"},
+        {"code": "AVB",  "name": "AvalonBay",     "ticker": "AVB",  "market": "股票"},
+    ],
+    "公用事業": [
+        {"code": "NEE",  "name": "NextEra",       "ticker": "NEE",  "market": "股票"},
+        {"code": "DUK",  "name": "Duke Energy",   "ticker": "DUK",  "market": "股票"},
+        {"code": "SO",   "name": "Southern Co.",  "ticker": "SO",   "market": "股票"},
+        {"code": "D",    "name": "Dominion",      "ticker": "D",    "market": "股票"},
+        {"code": "EXC",  "name": "Exelon",        "ticker": "EXC",  "market": "股票"},
+        {"code": "AEP",  "name": "Am. Elec. Pwr", "ticker": "AEP",  "market": "股票"},
+        {"code": "SRE",  "name": "Sempra",        "ticker": "SRE",  "market": "股票"},
+        {"code": "XEL",  "name": "Xcel Energy",   "ticker": "XEL",  "market": "股票"},
+        {"code": "ED",   "name": "Con Edison",    "ticker": "ED",   "market": "股票"},
+        {"code": "ETR",  "name": "Entergy",       "ticker": "ETR",  "market": "股票"},
+    ],
+}
+
+def get_tw_sector_cache():
+    """回傳 {產業別: [{code, name, ticker, market}]} 的字典，使用 TWSE opendata 取得"""
+    global _sector_cache_tw
+    if _sector_cache_tw is not None:
+        return _sector_cache_tw
+
+    result = {}
+    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+
+    try:
+        r = requests.get(
+            "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+            timeout=15, headers=headers, verify=False
+        )
+        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+            for item in r.json():
+                code   = item.get("公司代號", "").strip()
+                name   = item.get("公司名稱", "").strip()
+                sector = item.get("產業別", "其他").strip() or "其他"
+                if code and name and code.isdigit():
+                    result.setdefault(sector, []).append(
+                        {"code": code, "name": name, "ticker": f"{code}.TW", "market": "上市"}
+                    )
+    except Exception as e:
+        print(f"[TW sector TWSE error] {e}")
+
+    try:
+        r = requests.get(
+            "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O",
+            timeout=15, headers=headers, verify=False
+        )
+        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+            for item in r.json():
+                code   = item.get("公司代號", "").strip()
+                name   = item.get("公司名稱", "").strip()
+                sector = item.get("產業別", "其他").strip() or "其他"
+                if code and name and code.isdigit():
+                    result.setdefault(sector, []).append(
+                        {"code": code, "name": name, "ticker": f"{code}.TWO", "market": "上櫃"}
+                    )
+    except Exception as e:
+        print(f"[TW sector TPEX error] {e}")
+
+    _sector_cache_tw = result
+    return result
+
 
 def get_all_tw_stocks():
     global _stock_cache
@@ -545,6 +729,32 @@ def api_analyze():
     data["market_type"] = market
 
     return jsonify(data)
+
+
+@app.route("/api/sectors")
+def api_sectors():
+    market = request.args.get("market", "tw").lower()
+    if market == "us":
+        return jsonify({"sectors": list(US_SECTORS.keys())})
+    cache = get_tw_sector_cache()
+    sectors = sorted(cache.keys())
+    return jsonify({"sectors": sectors})
+
+
+@app.route("/api/sector_stocks")
+def api_sector_stocks():
+    market = request.args.get("market", "tw").lower()
+    sector = request.args.get("sector", "").strip()
+    if not sector:
+        return jsonify({"results": []}), 400
+
+    if market == "us":
+        stocks = US_SECTORS.get(sector, [])
+        return jsonify({"results": stocks})
+
+    cache = get_tw_sector_cache()
+    stocks = cache.get(sector, [])
+    return jsonify({"results": stocks})
 
 
 if __name__ == "__main__":

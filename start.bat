@@ -44,6 +44,13 @@ if not exist ".env" (
     )
 )
 
+:: Kill any existing app.py process on port 5000
+echo Checking for existing server process...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5000 " ^| findstr "LISTENING" 2^>nul') do (
+    echo   Killing old process PID %%a ...
+    taskkill /F /PID %%a >nul 2>&1
+)
+
 echo.
 echo Server starting at: http://127.0.0.1:5000
 echo Press Ctrl+C to stop.

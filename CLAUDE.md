@@ -5,7 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the App
 
 ```bash
-# Start the server (always use venv python directly — do NOT use activate)
+# Recommended: use the startup scripts (auto-kills old process on port 5000 first)
+start.bat          # Windows
+./start.sh         # macOS / Linux
+
+# Or start manually (always use venv python directly — do NOT use activate)
 venv\Scripts\python.exe app.py          # Windows
 venv/bin/python app.py                  # macOS / Linux
 
@@ -17,6 +21,8 @@ venv\Scripts\python.exe -c "from app import app; print('OK')"
 ```
 
 Port defaults to `5000`. Override with `PORT` env var.
+
+> **Windows gotcha**: `pkill` does not work on Windows. Always use `taskkill //F //PID <pid>` or re-run `start.bat` which handles this automatically.
 
 ## Environment
 
@@ -35,6 +41,8 @@ The app supports two markets selectable via the header toggle: **台股 (TW)** a
 | `/api/search` | GET | `q` | Taiwan stock search (TWSE + TPEX) |
 | `/api/search_us` | GET | `q` | US stock search (proxied Yahoo Finance search API) |
 | `/api/analyze` | GET | `ticker`, `name`, `market` (`tw`\|`us`) | Fetch + analyse a stock |
+| `/api/sectors` | GET | `market` (`tw`\|`us`) | List available sector names for a market |
+| `/api/sector_stocks` | GET | `market`, `sector` | Return stocks belonging to a sector |
 
 ### Data flow for `/api/analyze`
 
@@ -64,6 +72,10 @@ The app supports two markets selectable via the header toggle: **台股 (TW)** a
 
 **Stock list cache**: `_stock_cache` is a module-level global for Taiwan stocks. It is populated once per process. Restart the server to refresh it.
 
+**Sector data**:
+- Taiwan: `_sector_cache_tw` (module-level global, populated on first `/api/sectors?market=tw` call). Fetches from TWSE `t187ap03_L` (listed) and TPEX `mopsfin_t187ap03_O` (OTC). Field `產業別` is used as the sector key. Restart to refresh.
+- US: `US_SECTORS` is a hardcoded dict of 11 GICS sectors (科技、通訊服務、醫療保健、金融、非必需消費品、必需消費品、能源、工業、原材料、不動產、公用事業), each with ~10 representative stocks.
+
 ### Frontend (`templates/index.html`)
 
 Pure HTML/CSS/JS — no build step. Chart.js is loaded from CDN. All API calls go to the same Flask origin. The page manages four Chart.js instances (`chartPrice`, `chartRsi`, `chartMacd`, `chartVol`); each is destroyed and recreated on every new stock load.
@@ -74,6 +86,9 @@ Pure HTML/CSS/JS — no build step. Chart.js is loaded from CDN. All API calls g
 - Clears current results
 - Routes search to `/api/search` or `/api/search_us`
 - Passes `market` param to `/api/analyze`
+- Resets and reloads the sector pill bar for the new market
+
+**Sector browse panel**: Always-visible pill bar below the search box. On page load `loadSectorPills()` fetches `/api/sectors` and renders clickable pills. Clicking a pill calls `selectSector(sector)` which fetches `/api/sector_stocks` and renders a grid of stock cards below the pills. Clicking the same pill again (or ✕) calls `closeSectorPanel()`. `switchMarket` is monkey-patched to reset the panel and reload pills on market switch.
 
 **Currency display**: NT$ prefix and 元 unit for TW; $ prefix and USD unit for US. Market cap uses 兆/億 for TW and T/B for US.
 
