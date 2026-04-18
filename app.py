@@ -83,6 +83,42 @@ def search_stocks(keyword: str):
     return results[:20]
 
 
+# ─── 美股搜尋（透過 Yahoo Finance Search API）────────────────────────────────────
+
+def search_us_stocks(keyword: str):
+    keyword = keyword.strip()
+    if not keyword:
+        return []
+    US_EXCHANGES = {"NMS", "NYQ", "NGM", "PCX", "ASE", "BTS", "NCM", "NAS", "NYSE MKT"}
+    try:
+        r = requests.get(
+            "https://query1.finance.yahoo.com/v1/finance/search",
+            params={"q": keyword, "quotesCount": 20, "newsCount": 0},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            results = []
+            for q in r.json().get("quotes", []):
+                if q.get("quoteType") not in ("EQUITY", "ETF"):
+                    continue
+                if q.get("exchange", "") not in US_EXCHANGES:
+                    continue
+                symbol = q.get("symbol", "")
+                if not symbol or "." in symbol:
+                    continue
+                results.append({
+                    "code":   symbol,
+                    "name":   q.get("longname") or q.get("shortname", symbol),
+                    "market": "ETF" if q.get("quoteType") == "ETF" else "股票",
+                    "ticker": symbol,
+                })
+            return results[:15]
+    except Exception as e:
+        print(f"[US search error] {e}")
+    return []
+
+
 # ─── 技術指標計算 ────────────────────────────────────────────────────────────────
 
 def calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
@@ -120,7 +156,7 @@ def safe(val):
 
 # ─── 股票分析主邏輯 ──────────────────────────────────────────────────────────────
 
-def analyze_stock(ticker: str):
+def analyze_stock(ticker: str, market: str = "tw"):
     try:
         tk = yf.Ticker(ticker)
         hist = tk.history(period="1y", auto_adjust=True)
@@ -223,7 +259,8 @@ def analyze_stock(ticker: str):
             "pe_ratio":   safe(pe),
             "pb_ratio":   safe(pb),
             "roe":        round(roe * 100, 2) if roe else None,
-            "div_yield":  round(div_yield, 2) if div_yield else None,  # yfinance 台股已為百分比
+            # yfinance 台股已為百分比；美股為小數，需乘以 100
+            "div_yield":  round(div_yield * (1 if market == "tw" else 100), 2) if div_yield else None,
             "market_cap": market_cap,
             "eps":        safe(eps),
             "revenue_growth": round(revenue_growth * 100, 2) if revenue_growth else None,
@@ -238,18 +275,24 @@ def analyze_stock(ticker: str):
 
 # ─── Claude AI 投資建議 ──────────────────────────────────────────────────────────
 
-def generate_recommendation(ticker: str, name: str, data: dict) -> dict:
+def generate_recommendation(ticker: str, name: str, data: dict, market: str = "tw") -> dict:
     """回傳 { text, action, buy_low, buy_high, sell_low, sell_high }"""
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key or api_key == "your_api_key_here":
-        return _rule_based_recommendation(data)
+        return _rule_based_recommendation(data, market)
 
-    prompt = f"""你是一位擁有20年經驗的台灣股市專業分析師。請根據以下 **{name}（{ticker}）** 的即時數據，提供一份嚴謹、具體的投資分析報告。
+    currency = "元" if market == "tw" else "USD"
+    if market == "us":
+        analyst_role = "你是一位擁有20年經驗的美國股市專業分析師，熟悉 NYSE / Nasdaq 市場。"
+    else:
+        analyst_role = "你是一位擁有20年經驗的台灣股市專業分析師。"
+
+    prompt = f"""{analyst_role}請根據以下 **{name}（{ticker}）** 的即時數據，提供一份嚴謹、具體的投資分析報告。
 
 ## 【價格資訊】
-- 現價：{data['current_price']} 元
-- 今日漲跌：{data['price_change']:+.2f} 元（{data['price_change_pct']:+.2f}%）
+- 現價：{data['current_price']} {currency}
+- 今日漲跌：{data['price_change']:+.2f} {currency}（{data['price_change_pct']:+.2f}%）
 
 ## 【技術指標】
 | 指標 | 數值 |
@@ -316,10 +359,10 @@ def generate_recommendation(ticker: str, name: str, data: dict) -> dict:
         return result
     except Exception as e:
         print(f"[Claude API error] {e}")
-        return _rule_based_recommendation(data)
+        return _rule_based_recommendation(data, market)
 
 
-def _rule_based_recommendation(data: dict) -> dict:
+def _rule_based_recommendation(data: dict, market: str = "tw") -> dict:
     """當沒有 Claude API Key 時的規則型備援分析"""
     score = 0
     notes = []
@@ -382,12 +425,17 @@ def _rule_based_recommendation(data: dict) -> dict:
     elif vol_today > vol_avg5 * 1.5 and current < ma5:
         score -= 1; notes.append("量增價跌")
 
-    # 基本面
-    if div_yield and div_yield >= 5:
+    # 基本面（台股殖利率門檻 5%，美股 2.5%）
+    div_threshold = 2.5 if market == "us" else 5
+    pe_low  = 20 if market == "us" else 15
+    pe_high = 35 if market == "us" else 30
+    unit = "USD" if market == "us" else "元"
+
+    if div_yield and div_yield >= div_threshold:
         score += 1; notes.append(f"高殖利率 {div_yield:.1f}%")
-    if pe and pe < 15:
+    if pe and pe < pe_low:
         score += 1; notes.append(f"本益比偏低 {pe:.1f}x")
-    elif pe and pe > 30:
+    elif pe and pe > pe_high:
         score -= 1; notes.append(f"本益比偏高 {pe:.1f}x")
 
     # 判斷結論
@@ -401,9 +449,9 @@ def _rule_based_recommendation(data: dict) -> dict:
                 f"股價{'高於' if current>ma20 else '低於'}MA20。布林通道{'下軌支撐' if current<bb_lo else '中軌以上'}，"
                 f"成交量{'放大' if vol_today>vol_avg5 else '縮小'}。整體技術面偏多。")
         fund = (f"殖利率 {div_yield or 'N/A'}%，本益比 {pe or 'N/A'}x，ROE {data.get('roe') or 'N/A'}%。"
-                f"{'高殖利率提供下檔保護。' if div_yield and div_yield>=5 else ''}"
-                f"{'估值合理偏低。' if pe and pe<20 else ''}")
-        rec = f"建議在 {buy_low}～{buy_high} 元分批買進，停損設於 {stop_loss} 元。"
+                f"{'高殖利率提供下檔保護。' if div_yield and div_yield>=div_threshold else ''}"
+                f"{'估值合理偏低。' if pe and pe<pe_high else ''}")
+        rec = f"建議在 {buy_low}～{buy_high} {unit}分批買進，停損設於 {stop_loss} {unit}。"
         return {"action": action, "summary": summary, "technical_analysis": tech,
                 "fundamental_analysis": fund, "recommendation": rec,
                 "buy_low": buy_low, "buy_high": buy_high, "stop_loss": stop_loss,
@@ -419,8 +467,8 @@ def _rule_based_recommendation(data: dict) -> dict:
         tech = (f"RSI={rsi:.1f}{'(超買)' if rsi>70 else ''}，MACD={'死叉' if macd<sig else '金叉'}，"
                 f"股價{'低於' if current<ma20 else '高於'}MA20。整體技術面偏空，下行風險偏高。")
         fund = (f"殖利率 {div_yield or 'N/A'}%，本益比 {pe or 'N/A'}x，ROE {data.get('roe') or 'N/A'}%。"
-                f"{'本益比偏高，估值有修正壓力。' if pe and pe>30 else '基本面需持續觀察。'}")
-        rec = f"建議在 {sell_low}～{sell_high} 元逢高賣出，停利目標 {take_profit} 元附近。"
+                f"{'本益比偏高，估值有修正壓力。' if pe and pe>pe_high else '基本面需持續觀察。'}")
+        rec = f"建議在 {sell_low}～{sell_high} {unit}逢高賣出，停利目標 {take_profit} {unit}附近。"
         return {"action": action, "summary": summary, "technical_analysis": tech,
                 "fundamental_analysis": fund, "recommendation": rec,
                 "buy_low": None, "buy_high": None, "stop_loss": None,
@@ -434,8 +482,8 @@ def _rule_based_recommendation(data: dict) -> dict:
                 f"股價於均線附近整理，方向待確認。")
         fund = (f"殖利率 {div_yield or 'N/A'}%，本益比 {pe or 'N/A'}x。基本面尚可，"
                 f"但技術面需等待突破訊號。")
-        wait = f"等待 RSI 低於 35 或突破壓力位 {resistance:.2f} 元後再考慮進場。"
-        rec = f"目前不建議新倉，持有者可以 {round(support*0.97,2)} 元為停損觀察。"
+        wait = f"等待 RSI 低於 35 或突破壓力位 {resistance:.2f} {unit}後再考慮進場。"
+        rec = f"目前不建議新倉，持有者可以 {round(support*0.97,2)} {unit}為停損觀察。"
         return {"action": action, "summary": summary, "technical_analysis": tech,
                 "fundamental_analysis": fund, "recommendation": rec,
                 "buy_low": None, "buy_high": None, "stop_loss": None,
@@ -460,32 +508,46 @@ def api_search():
     return jsonify({"results": results})
 
 
+@app.route("/api/search_us")
+def api_search_us():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"results": []})
+    results = search_us_stocks(q)
+    return jsonify({"results": results})
+
+
 @app.route("/api/analyze")
 def api_analyze():
     ticker = request.args.get("ticker", "").strip()
     name   = request.args.get("name", ticker)
+    market = request.args.get("market", "tw").lower()
 
     if not ticker:
         return jsonify({"error": "請提供股票代碼"}), 400
 
-    data = analyze_stock(ticker)
+    data = analyze_stock(ticker, market)
     if not data:
-        # 嘗試另一個市場後綴
-        alt = ticker.replace(".TW", ".TWO") if ticker.endswith(".TW") else ticker.replace(".TWO", ".TW")
-        data = analyze_stock(alt)
-        if not data:
+        if market == "tw":
+            # 台股：嘗試另一個市場後綴
+            alt = ticker.replace(".TW", ".TWO") if ticker.endswith(".TW") else ticker.replace(".TWO", ".TW")
+            data = analyze_stock(alt, market)
+            if not data:
+                return jsonify({"error": f"無法取得 {ticker} 的資料，請確認代號是否正確。"}), 404
+            ticker = alt
+        else:
             return jsonify({"error": f"無法取得 {ticker} 的資料，請確認代號是否正確。"}), 404
-        ticker = alt
 
-    rec = generate_recommendation(ticker, name, data)
+    rec = generate_recommendation(ticker, name, data, market)
     data["recommendation"] = rec
     data["name"]   = name
     data["ticker"] = ticker
+    data["market_type"] = market
 
     return jsonify(data)
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"台股分析系統啟動於 http://127.0.0.1:{port}")
+    print(f"股票分析系統啟動於 http://127.0.0.1:{port}")
     app.run(debug=False, port=port)
