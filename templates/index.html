@@ -25,7 +25,7 @@
   --radius:   12px;
 }
 body {
-  font-family: 'Microsoft JhengHei', '微軟正黑體', -apple-system, sans-serif;
+  font-family: 'Microsoft JhengHei', '微軟正黑體', 'Yu Gothic', 'Hiragino Sans', -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -68,6 +68,34 @@ header p  { font-size: .9rem; opacity: .75; margin-bottom: 14px; }
   box-shadow: 0 2px 8px rgba(0,0,0,.18);
 }
 .mkt-btn:not(.active):hover { color: #fff; background: rgba(255,255,255,.2); }
+
+/* ── 語言切換 ── */
+.lang-toggle {
+  display: inline-flex;
+  background: rgba(255,255,255,.10);
+  border-radius: 20px;
+  padding: 3px;
+  gap: 2px;
+  margin-top: 10px;
+}
+.lang-btn {
+  padding: 4px 14px;
+  border-radius: 16px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,.65);
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+  font-family: inherit;
+  letter-spacing: .03em;
+}
+.lang-btn.active {
+  background: rgba(255,255,255,.22);
+  color: #fff;
+}
+.lang-btn:not(.active):hover { color: #fff; background: rgba(255,255,255,.12); }
 
 /* ── Search ── */
 .search-wrap {
@@ -499,11 +527,16 @@ main {
 <body>
 
 <header>
-  <h1>📈 智能股票分析系統</h1>
-  <p>輸入股票代碼或公司名稱關鍵字，取得 AI 投資建議</p>
+  <h1 id="headerTitle">📈 智能股票分析系統</h1>
+  <p id="headerSubtitle">輸入股票代碼或公司名稱關鍵字，取得 AI 投資建議</p>
   <div class="market-toggle">
     <button class="mkt-btn active" id="btnTW" onclick="switchMarket('tw')">🇹🇼 台股</button>
     <button class="mkt-btn" id="btnUS" onclick="switchMarket('us')">🇺🇸 美股</button>
+  </div>
+  <div class="lang-toggle" style="margin-top:10px">
+    <button class="lang-btn active" id="langZH" onclick="setLang('zh')">繁中</button>
+    <button class="lang-btn" id="langJA" onclick="setLang('ja')">日本語</button>
+    <button class="lang-btn" id="langEN" onclick="setLang('en')">EN</button>
   </div>
 </header>
 
@@ -521,12 +554,12 @@ main {
   <div class="sector-browse-box">
     <div class="sector-pills-bar" id="sectorPillsBar">
       <span class="sector-label">📊 產業分類</span>
-      <span style="font-size:.78rem;color:var(--text-s)">載入中…</span>
+      <span id="sectorLoadingText" style="font-size:.78rem;color:var(--text-s)">載入中…</span>
     </div>
     <div class="sector-stock-panel" id="sectorStockPanel">
       <div class="sector-panel-header">
         <span class="sector-panel-title" id="sectorPanelTitle"></span>
-        <button class="sector-panel-close" onclick="closeSectorPanel()">✕ 收起</button>
+        <button class="sector-panel-close" id="sectorPanelClose" onclick="closeSectorPanel()">✕ 收起</button>
       </div>
       <div class="sector-stocks-grid" id="sectorStocksGrid"></div>
     </div>
@@ -544,7 +577,7 @@ main {
   <!-- Loading -->
   <div class="loading" id="loading">
     <div class="spinner"></div>
-    <p>正在分析股票數據，請稍候…</p>
+    <p id="loadingText">正在分析股票數據，請稍候…</p>
   </div>
 
   <!-- 錯誤 -->
@@ -597,7 +630,7 @@ main {
 
     <!-- 價格圖 -->
     <div class="card">
-      <div class="card-title">📉 股價走勢</div>
+      <div class="card-title" data-i18n="priceChart">📉 股價走勢</div>
       <div class="chart-tabs">
         <button class="tab-btn active" onclick="switchChart('price',this)">K 線 + 均線</button>
         <button class="tab-btn" onclick="switchChart('bb',this)">布林通道</button>
@@ -621,15 +654,15 @@ main {
 
     <!-- 成交量 -->
     <div class="card">
-      <div class="card-title">📦 成交量</div>
+      <div class="card-title" data-i18n="volChart">📦 成交量</div>
       <div class="chart-small"><canvas id="volChart"></canvas></div>
     </div>
 
     <!-- 股利紀錄 -->
     <div class="card" id="divCard" style="display:none">
-      <div class="card-title">💵 近期股利紀錄</div>
+      <div class="card-title" data-i18n="divCard">💵 近期股利紀錄</div>
       <table class="div-table">
-        <thead><tr><th>除息日</th><th id="divAmtHeader">股利（元）</th></tr></thead>
+        <thead><tr><th id="divDateHeader">除息日</th><th id="divAmtHeader">股利（元）</th></tr></thead>
         <tbody id="divBody"></tbody>
       </table>
     </div>
@@ -638,6 +671,153 @@ main {
 </main>
 
 <script>
+// ────────── 多語言 ──────────
+const LANGS = {
+  zh: {
+    title: '智能股票分析系統',
+    subtitle: '輸入股票代碼或公司名稱關鍵字，取得 AI 投資建議',
+    btnTW: '🇹🇼 台股', btnUS: '🇺🇸 美股', btnAnalyze: '分析',
+    sectorLabel: '📊 產業分類',
+    analyzing: '正在分析股票數據，請稍候…',
+    hintTitleTW: '開始分析台股',
+    hintDescTW: '輸入上市或上櫃公司的股票代碼或名稱關鍵字，系統將自動分析技術面、基本面，並提供 AI 投資建議。',
+    hintTitleUS: '開始分析美股',
+    hintDescUS: '輸入 NYSE / Nasdaq 上市公司的股票代碼或名稱，系統將自動分析技術面、基本面，並提供 AI 投資建議。',
+    placeholderTW: '輸入股票代碼（如 2330）或公司名稱（如 台積電）…',
+    placeholderUS: '輸入股票代碼（如 AAPL）或公司名稱（如 Apple）…',
+    techAnalysis: '📊 技術面分析', fundAnalysis: '💰 基本面分析', opAnalysis: '🎯 操作建議',
+    priceChart: '📉 股價走勢', klineTab: 'K 線 + 均線', bbTab: '布林通道',
+    volChart: '📦 成交量', divCard: '💵 近期股利紀錄',
+    divDate: '除息日', divAmt: '股利',
+    support: '支撐位', resistance: '壓力位', pe: '本益比 P/E', divYield: '殖利率', volume: '成交量',
+    buy: '買進', sell: '賣出', watch: '觀望',
+    buyLow: '建議買進下限', buyHigh: '建議買進上限', stopLoss: '建議停損價',
+    sellLow: '建議賣出下限', sellHigh: '建議賣出上限', takeProfit: '停利目標價',
+    waitCond: '等待條件：',
+    riskDefault: '投資有風險，以上分析僅供參考，請自行評估風險。',
+    closingPrice: '收盤價', bbUpper: '布林上軌', bbLower: '布林下軌',
+    overbought: '超買(70)', oversold: '超賣(30)',
+    sectorClose: '✕ 收起', sectorAnalyze: '分析', sectorSuffix: ' 類股',
+    loadingData: '載入中…', loadFail: '無法載入', loadStockFail: '無法載入股票清單',
+    noData: '此類別目前無資料',
+    errAnalyze: '分析失敗，請稍後再試。', errNetwork: '網路錯誤，請確認伺服器是否正常運行。',
+    marketCap: '市值', tenThousand: '萬',
+  },
+  en: {
+    title: 'AI Stock Analyzer',
+    subtitle: 'Enter a ticker or company name to get AI-powered investment insights',
+    btnTW: '🇹🇼 Taiwan', btnUS: '🇺🇸 US', btnAnalyze: 'Analyze',
+    sectorLabel: '📊 Sectors',
+    analyzing: 'Analyzing stock data, please wait…',
+    hintTitleTW: 'Analyze Taiwan Stocks',
+    hintDescTW: 'Enter the ticker or company name of a TWSE / TPEX listed stock. The system will analyze technicals and fundamentals and provide AI investment advice.',
+    hintTitleUS: 'Analyze US Stocks',
+    hintDescUS: 'Enter the ticker or company name of a NYSE / Nasdaq listed stock. The system will analyze technicals and fundamentals and provide AI investment advice.',
+    placeholderTW: 'Enter ticker (e.g. 2330) or name (e.g. TSMC)…',
+    placeholderUS: 'Enter ticker (e.g. AAPL) or name (e.g. Apple)…',
+    techAnalysis: '📊 Technical Analysis', fundAnalysis: '💰 Fundamental Analysis', opAnalysis: '🎯 Recommendation',
+    priceChart: '📉 Price Chart', klineTab: 'Price + MA', bbTab: 'Bollinger Bands',
+    volChart: '📦 Volume', divCard: '💵 Recent Dividend History',
+    divDate: 'Ex-Div Date', divAmt: 'Dividend',
+    support: 'Support', resistance: 'Resistance', pe: 'P/E Ratio', divYield: 'Div Yield', volume: 'Volume',
+    buy: 'BUY', sell: 'SELL', watch: 'HOLD',
+    buyLow: 'Buy Range Low', buyHigh: 'Buy Range High', stopLoss: 'Stop Loss',
+    sellLow: 'Sell Range Low', sellHigh: 'Sell Range High', takeProfit: 'Take Profit',
+    waitCond: 'Wait Condition:',
+    riskDefault: 'Investing involves risk. This analysis is for reference only — please assess risks independently.',
+    closingPrice: 'Close', bbUpper: 'BB Upper', bbLower: 'BB Lower',
+    overbought: 'Overbought(70)', oversold: 'Oversold(30)',
+    sectorClose: '✕ Close', sectorAnalyze: 'Analyze', sectorSuffix: ' Sector',
+    loadingData: 'Loading…', loadFail: 'Failed to load', loadStockFail: 'Failed to load stock list',
+    noData: 'No data available for this sector',
+    errAnalyze: 'Analysis failed. Please try again later.', errNetwork: 'Network error. Please check if the server is running.',
+    marketCap: 'Mkt Cap', tenThousand: 'K',
+  },
+  ja: {
+    title: 'AI株式分析システム',
+    subtitle: '銘柄コードまたは企業名を入力してAI投資アドバイスを取得',
+    btnTW: '🇹🇼 台湾株', btnUS: '🇺🇸 米国株', btnAnalyze: '分析',
+    sectorLabel: '📊 業種',
+    analyzing: '株式データを分析中、しばらくお待ちください…',
+    hintTitleTW: '台湾株を分析する',
+    hintDescTW: 'TWSE / TPEXに上場する銘柄コードまたは企業名を入力してください。テクニカル・ファンダメンタル分析とAI投資アドバイスを提供します。',
+    hintTitleUS: '米国株を分析する',
+    hintDescUS: 'NYSE / Nasdaqに上場する銘柄コードまたは企業名を入力してください。テクニカル・ファンダメンタル分析とAI投資アドバイスを提供します。',
+    placeholderTW: '銘柄コード（例：2330）または企業名（例：TSMC）…',
+    placeholderUS: '銘柄コード（例：AAPL）または企業名（例：Apple）…',
+    techAnalysis: '📊 テクニカル分析', fundAnalysis: '💰 ファンダメンタル分析', opAnalysis: '🎯 売買提案',
+    priceChart: '📉 株価推移', klineTab: '株価＋移動平均', bbTab: 'ボリンジャーバンド',
+    volChart: '📦 出来高', divCard: '💵 直近配当履歴',
+    divDate: '権利落ち日', divAmt: '配当',
+    support: 'サポート', resistance: 'レジスタンス', pe: 'PER', divYield: '配当利回り', volume: '出来高',
+    buy: '買い', sell: '売り', watch: '様子見',
+    buyLow: '買い下限価格', buyHigh: '買い上限価格', stopLoss: '損切り価格',
+    sellLow: '売り下限価格', sellHigh: '売り上限価格', takeProfit: '利確目標価格',
+    waitCond: '待機条件：',
+    riskDefault: '投資にはリスクが伴います。この分析は参考情報であり、自己判断でリスクを評価してください。',
+    closingPrice: '終値', bbUpper: 'BB上限', bbLower: 'BB下限',
+    overbought: '買われ過ぎ(70)', oversold: '売られ過ぎ(30)',
+    sectorClose: '✕ 閉じる', sectorAnalyze: '分析', sectorSuffix: ' 業種株',
+    loadingData: '読込中…', loadFail: '読込失敗', loadStockFail: '銘柄リストを読み込めません',
+    noData: 'このカテゴリのデータはありません',
+    errAnalyze: '分析に失敗しました。後でもう一度お試しください。', errNetwork: 'ネットワークエラー。サーバーが正常に動作しているか確認してください。',
+    marketCap: '時価総額', tenThousand: '万',
+  },
+};
+
+let currentLang = 'zh';
+function t(key) { return (LANGS[currentLang] || LANGS.zh)[key] || key; }
+
+function setLang(lang) {
+  currentLang = lang;
+  ['ZH','JA','EN'].forEach(l =>
+    document.getElementById('lang' + l).classList.toggle('active', l.toLowerCase() === lang)
+  );
+  document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : lang === 'ja' ? 'ja' : 'en';
+  applyLang();
+}
+
+function applyLang() {
+  document.title = t('title');
+  document.getElementById('headerTitle').textContent = '📈 ' + t('title');
+  document.getElementById('headerSubtitle').textContent = t('subtitle');
+  document.getElementById('btnTW').textContent = t('btnTW');
+  document.getElementById('btnUS').textContent = t('btnUS');
+  document.querySelector('.btn-search').textContent = t('btnAnalyze');
+  document.getElementById('loadingText').textContent = t('analyzing');
+
+  const market = currentMarket || 'tw';
+  document.getElementById('hintTitle').textContent = market === 'us' ? t('hintTitleUS') : t('hintTitleTW');
+  document.getElementById('hintDesc').textContent  = market === 'us' ? t('hintDescUS')  : t('hintDescTW');
+  document.getElementById('searchInput').placeholder = market === 'us' ? t('placeholderUS') : t('placeholderTW');
+
+  const sectorLabelEl = document.querySelector('.sector-label');
+  if (sectorLabelEl) sectorLabelEl.textContent = t('sectorLabel');
+  const sectorLoadingEl = document.getElementById('sectorLoadingText');
+  if (sectorLoadingEl) sectorLoadingEl.textContent = t('loadingData');
+
+  const recSections = document.querySelectorAll('.rec-section h4');
+  if (recSections[0]) recSections[0].textContent = t('techAnalysis');
+  if (recSections[1]) recSections[1].textContent = t('fundAnalysis');
+  if (recSections[2]) recSections[2].textContent = t('opAnalysis');
+
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  if (tabBtns[0]) tabBtns[0].textContent = t('klineTab');
+  if (tabBtns[1]) tabBtns[1].textContent = t('bbTab');
+
+  const cardTitles = document.querySelectorAll('.card-title');
+  cardTitles.forEach(el => {
+    const id = el.dataset.i18n;
+    if (id) el.textContent = t(id);
+  });
+
+  const closePanelBtn = document.getElementById('sectorPanelClose');
+  if (closePanelBtn) closePanelBtn.textContent = t('sectorClose');
+
+  const divDateTh = document.getElementById('divDateHeader');
+  if (divDateTh) divDateTh.textContent = t('divDate');
+}
+
 // ────────── 全域狀態 ──────────
 let chartPrice = null, chartRsi = null, chartMacd = null, chartVol = null;
 let currentChartMode = 'price';
@@ -653,22 +833,14 @@ function switchMarket(market) {
 
   const root = document.documentElement;
   if (market === 'us') {
-    // 美股：綠=漲，紅=跌（西方慣例）
     root.style.setProperty('--up',   '#16a34a');
     root.style.setProperty('--down', '#dc2626');
-    document.getElementById('searchInput').placeholder = '輸入股票代碼（如 AAPL）或公司名稱（如 Apple）…';
-    document.getElementById('hintIcon').textContent  = '🔍';
-    document.getElementById('hintTitle').textContent = '開始分析美股';
-    document.getElementById('hintDesc').textContent  = '輸入 NYSE / Nasdaq 上市公司的股票代碼或名稱，系統將自動分析技術面、基本面，並提供 AI 投資建議。';
   } else {
-    // 台股：紅=漲，綠=跌
     root.style.setProperty('--up',   '#dc2626');
     root.style.setProperty('--down', '#16a34a');
-    document.getElementById('searchInput').placeholder = '輸入股票代碼（如 2330）或公司名稱（如 台積電）…';
-    document.getElementById('hintIcon').textContent  = '🔍';
-    document.getElementById('hintTitle').textContent = '開始分析台股';
-    document.getElementById('hintDesc').textContent  = '輸入上市或上櫃公司的股票代碼或名稱關鍵字，系統將自動分析技術面、基本面，並提供 AI 投資建議。';
   }
+  document.getElementById('hintIcon').textContent = '🔍';
+  applyLang();
 
   // 清除搜尋框與結果
   document.getElementById('searchInput').value = '';
@@ -748,12 +920,12 @@ async function analyzeStock(ticker, name) {
     const data = await res.json();
 
     if (!res.ok) {
-      showError(data.error || '分析失敗，請稍後再試。');
+      showError(data.error || t('errAnalyze'));
       return;
     }
     renderResult(data);
   } catch(e) {
-    showError('網路錯誤，請確認伺服器是否正常運行。');
+    showError(t('errNetwork'));
   } finally {
     setLoading(false);
   }
@@ -785,16 +957,16 @@ function renderResult(d) {
 
   // 指標格
   const metrics = [
-    { label: 'RSI (14)',      value: fmtNum(d.rsi, 1),       cls: rsiClass(d.rsi) },
-    { label: 'MA5',            value: `${fmtNum(d.ma5, 2)} ${currencyUnit}` },
-    { label: 'MA20',           value: `${fmtNum(d.ma20, 2)} ${currencyUnit}` },
-    { label: 'MA60',           value: `${fmtNum(d.ma60, 2)} ${currencyUnit}` },
-    { label: '支撐位',         value: `${fmtNum(d.support, 2)} ${currencyUnit}` },
-    { label: '壓力位',         value: `${fmtNum(d.resistance, 2)} ${currencyUnit}` },
-    { label: '本益比 P/E',     value: fmtNum(d.pe_ratio, 1) || 'N/A' },
-    { label: '殖利率',         value: d.div_yield != null ? d.div_yield + '%' : 'N/A' },
-    { label: 'ROE',            value: d.roe != null ? d.roe + '%' : 'N/A' },
-    { label: '成交量',         value: fmtVol(d.vol_today) },
+    { label: 'RSI (14)',         value: fmtNum(d.rsi, 1),       cls: rsiClass(d.rsi) },
+    { label: 'MA5',              value: `${fmtNum(d.ma5, 2)} ${currencyUnit}` },
+    { label: 'MA20',             value: `${fmtNum(d.ma20, 2)} ${currencyUnit}` },
+    { label: 'MA60',             value: `${fmtNum(d.ma60, 2)} ${currencyUnit}` },
+    { label: t('support'),       value: `${fmtNum(d.support, 2)} ${currencyUnit}` },
+    { label: t('resistance'),    value: `${fmtNum(d.resistance, 2)} ${currencyUnit}` },
+    { label: t('pe'),            value: fmtNum(d.pe_ratio, 1) || 'N/A' },
+    { label: t('divYield'),      value: d.div_yield != null ? d.div_yield + '%' : 'N/A' },
+    { label: 'ROE',              value: d.roe != null ? d.roe + '%' : 'N/A' },
+    { label: t('volume'),        value: fmtVol(d.vol_today) },
   ];
   document.getElementById('metricsGrid').innerHTML = metrics.map(m => `
     <div class="metric-item">
@@ -817,7 +989,7 @@ function renderResult(d) {
 
   // 股利
   const divUnit = isUS ? 'USD' : '元';
-  document.getElementById('divAmtHeader').textContent = `股利（${divUnit}）`;
+  document.getElementById('divAmtHeader').textContent = `${t('divAmt')}（${divUnit}）`;
   if (d.div_history && d.div_history.length) {
     document.getElementById('divCard').style.display = 'block';
     document.getElementById('divBody').innerHTML = d.div_history.slice().reverse().map(item =>
@@ -832,29 +1004,30 @@ function renderRecommendation(rec, currencyPrefix) {
   if (!rec) return;
   const header = document.getElementById('recHeader');
   const action = rec.action || '觀望';
+  const actionKey = action === '買進' ? 'buy' : action === '賣出' ? 'sell' : 'watch';
 
-  header.className = 'rec-header ' + (action === '買進' ? 'buy' : action === '賣出' ? 'sell' : 'watch');
-  document.getElementById('recAction').textContent  = `【${action}】`;
+  header.className = 'rec-header ' + actionKey;
+  document.getElementById('recAction').textContent  = `【${t(actionKey)}】`;
   document.getElementById('recSummary').textContent = rec.summary || '';
   document.getElementById('recTech').textContent    = rec.technical_analysis || '';
   document.getElementById('recFund').textContent    = rec.fundamental_analysis || '';
   document.getElementById('recOp').textContent      = rec.recommendation || '';
-  document.getElementById('riskNotice').textContent = '⚠️ ' + (rec.risk_warning || '投資有風險，以上分析僅供參考，請自行評估風險。');
+  document.getElementById('riskNotice').textContent = '⚠️ ' + (rec.risk_warning || t('riskDefault'));
 
   const priceRange = document.getElementById('priceRange');
   let rangeHTML = '';
 
   if (action === '買進') {
-    if (rec.buy_low != null)   rangeHTML += rangeBox('建議買進下限', `${currencyPrefix}${rec.buy_low}`,   'highlight-buy',  'buy-color');
-    if (rec.buy_high != null)  rangeHTML += rangeBox('建議買進上限', `${currencyPrefix}${rec.buy_high}`,  'highlight-buy',  'buy-color');
-    if (rec.stop_loss != null) rangeHTML += rangeBox('建議停損價',   `${currencyPrefix}${rec.stop_loss}`, 'highlight-stop', 'stop-color');
+    if (rec.buy_low != null)   rangeHTML += rangeBox(t('buyLow'),   `${currencyPrefix}${rec.buy_low}`,   'highlight-buy',  'buy-color');
+    if (rec.buy_high != null)  rangeHTML += rangeBox(t('buyHigh'),  `${currencyPrefix}${rec.buy_high}`,  'highlight-buy',  'buy-color');
+    if (rec.stop_loss != null) rangeHTML += rangeBox(t('stopLoss'), `${currencyPrefix}${rec.stop_loss}`, 'highlight-stop', 'stop-color');
   } else if (action === '賣出') {
-    if (rec.sell_low != null)    rangeHTML += rangeBox('建議賣出下限', `${currencyPrefix}${rec.sell_low}`,    'highlight-sell', 'sell-color');
-    if (rec.sell_high != null)   rangeHTML += rangeBox('建議賣出上限', `${currencyPrefix}${rec.sell_high}`,   'highlight-sell', 'sell-color');
-    if (rec.take_profit != null) rangeHTML += rangeBox('停利目標價',   `${currencyPrefix}${rec.take_profit}`, 'highlight-stop', 'stop-color');
+    if (rec.sell_low != null)    rangeHTML += rangeBox(t('sellLow'),    `${currencyPrefix}${rec.sell_low}`,    'highlight-sell', 'sell-color');
+    if (rec.sell_high != null)   rangeHTML += rangeBox(t('sellHigh'),   `${currencyPrefix}${rec.sell_high}`,   'highlight-sell', 'sell-color');
+    if (rec.take_profit != null) rangeHTML += rangeBox(t('takeProfit'), `${currencyPrefix}${rec.take_profit}`, 'highlight-stop', 'stop-color');
   } else if (rec.wait_condition) {
     rangeHTML += `<div style="font-size:.9rem;padding:12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;flex:1">
-      ⏳ <strong>等待條件：</strong>${rec.wait_condition}</div>`;
+      ⏳ <strong>${t('waitCond')}</strong>${rec.wait_condition}</div>`;
   }
 
   priceRange.innerHTML = rangeHTML;
@@ -886,15 +1059,15 @@ function buildPriceChart(data, yUnit) {
   const bbLo   = data.map(d => d.bb_lower);
 
   const datasets = [
-    lineDs('收盤價', close, '#1d4ed8', 2, false),
+    lineDs(t('closingPrice'), close, '#1d4ed8', 2, false),
     lineDs('MA5',  ma5,  '#f59e0b', 1, false),
     lineDs('MA20', ma20, '#8b5cf6', 1, false),
     lineDs('MA60', ma60, '#06b6d4', 1, false),
   ];
 
   if (currentChartMode === 'bb') {
-    datasets.push(lineDs('布林上軌', bbUp, '#dc2626', 1, true));
-    datasets.push(lineDs('布林下軌', bbLo, '#16a34a', 1, true));
+    datasets.push(lineDs(t('bbUpper'), bbUp, '#dc2626', 1, true));
+    datasets.push(lineDs(t('bbLower'), bbLo, '#16a34a', 1, true));
   }
 
   chartPrice = new Chart(document.getElementById('priceChart').getContext('2d'), {
@@ -915,8 +1088,8 @@ function buildRsiChart(data) {
     type: 'line',
     data: { labels, datasets: [
       lineDs('RSI', rsi, '#8b5cf6', 1.5, false),
-      lineDs('超買(70)', ob, '#dc262640', .8, true),
-      lineDs('超賣(30)', os, '#16a34a40', .8, true),
+      lineDs(t('overbought'), ob, '#dc262640', .8, true),
+      lineDs(t('oversold'),   os, '#16a34a40', .8, true),
     ]},
     options: { ...chartOpts('', false), scales: { x: hiddenX(), y: { min:0, max:100, grid:{color:'#e2e8f010'}, ticks:{color:'#64748b', font:{size:10}} } } }
   });
@@ -952,7 +1125,7 @@ function buildVolChart(data) {
 
   chartVol = new Chart(document.getElementById('volChart').getContext('2d'), {
     type: 'bar',
-    data: { labels, datasets: [{ label: '成交量', data: vols, backgroundColor: colors, borderWidth: 0 }] },
+    data: { labels, datasets: [{ label: t('volume'), data: vols, backgroundColor: colors, borderWidth: 0 }] },
     options: { ...chartOpts('', false), scales: { x: hiddenX(), y: { grid:{color:'#e2e8f010'}, ticks:{color:'#64748b', font:{size:10}, callback: v => fmtVol(v)} } } }
   });
 }
@@ -1024,19 +1197,20 @@ function fmtVol(v) {
   if (v == null) return 'N/A';
   if (v >= 1e9) return (v/1e9).toFixed(1) + 'B';
   if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
-  if (v >= 1e4) return (v/1e4).toFixed(1) + '萬';
+  if (v >= 1e4) return (v/1e4).toFixed(1) + t('tenThousand');
   return v.toString();
 }
 
 function fmtCap(v, isUS) {
   if (!v) return '';
+  const mc = t('marketCap');
   if (isUS) {
-    if (v >= 1e12) return '市值 $' + (v/1e12).toFixed(2) + 'T';
-    if (v >= 1e9)  return '市值 $' + (v/1e9).toFixed(1)  + 'B';
+    if (v >= 1e12) return `${mc} $${(v/1e12).toFixed(2)}T`;
+    if (v >= 1e9)  return `${mc} $${(v/1e9).toFixed(1)}B`;
     return '';
   }
-  if (v >= 1e12) return '市值 ' + (v/1e12).toFixed(1) + ' 兆';
-  if (v >= 1e8)  return '市值 ' + (v/1e8).toFixed(0)  + ' 億';
+  if (v >= 1e12) return `${mc} ${(v/1e12).toFixed(1)} 兆`;
+  if (v >= 1e8)  return `${mc} ${(v/1e8).toFixed(0)} 億`;
   return '';
 }
 
@@ -1055,7 +1229,7 @@ function escHtml(s) {
 let activeSector = null;
 
 // 頁面載入後自動拉取產業列表
-window.addEventListener('DOMContentLoaded', () => loadSectorPills());
+window.addEventListener('DOMContentLoaded', () => { applyLang(); loadSectorPills(); });
 
 async function loadSectorPills() {
   const bar = document.getElementById('sectorPillsBar');
@@ -1064,13 +1238,13 @@ async function loadSectorPills() {
     const json = await res.json();
     renderSectorPills(json.sectors || []);
   } catch(e) {
-    bar.innerHTML = '<span class="sector-label">📊 產業分類</span><span style="font-size:.78rem;color:var(--text-s)">無法載入</span>';
+    bar.innerHTML = `<span class="sector-label">${t('sectorLabel')}</span><span style="font-size:.78rem;color:var(--text-s)">${t('loadFail')}</span>`;
   }
 }
 
 function renderSectorPills(sectors) {
   const bar = document.getElementById('sectorPillsBar');
-  bar.innerHTML = `<span class="sector-label">📊 產業分類</span>` +
+  bar.innerHTML = `<span class="sector-label">${t('sectorLabel')}</span>` +
     sectors.map(s =>
       `<button class="sector-pill" onclick="selectSector('${escHtml(s)}')">${escHtml(s)}</button>`
     ).join('');
@@ -1085,20 +1259,20 @@ async function selectSector(sector) {
     b.classList.toggle('active', b.textContent === sector)
   );
   document.getElementById('sectorPillsBar').classList.add('has-active');
-  document.getElementById('sectorPanelTitle').textContent = `${sector} 類股`;
+  document.getElementById('sectorPanelTitle').textContent = `${sector}${t('sectorSuffix')}`;
 
   const panel = document.getElementById('sectorStockPanel');
   panel.classList.add('open');
 
   const grid = document.getElementById('sectorStocksGrid');
-  grid.innerHTML = '<div class="sector-grid-msg">載入中…</div>';
+  grid.innerHTML = `<div class="sector-grid-msg">${t('loadingData')}</div>`;
 
   try {
     const res  = await fetch(`/api/sector_stocks?market=${currentMarket}&sector=${encodeURIComponent(sector)}`);
     const json = await res.json();
     renderSectorStocks(json.results || []);
   } catch(e) {
-    grid.innerHTML = '<div class="sector-grid-msg">無法載入股票清單</div>';
+    grid.innerHTML = `<div class="sector-grid-msg">${t('loadStockFail')}</div>`;
   }
 }
 
@@ -1112,7 +1286,7 @@ function closeSectorPanel() {
 function renderSectorStocks(stocks) {
   const grid = document.getElementById('sectorStocksGrid');
   if (!stocks.length) {
-    grid.innerHTML = '<div class="sector-grid-msg">此類別目前無資料</div>';
+    grid.innerHTML = `<div class="sector-grid-msg">${t('noData')}</div>`;
     return;
   }
   grid.innerHTML = stocks.map(s => `
@@ -1121,7 +1295,7 @@ function renderSectorStocks(stocks) {
         <div class="sector-stock-code">${escHtml(s.code)}</div>
         <div class="sector-stock-name" title="${escHtml(s.name)}">${escHtml(s.name)}</div>
       </div>
-      <button class="btn-analyze-sector">分析</button>
+      <button class="btn-analyze-sector">${t('sectorAnalyze')}</button>
     </div>`).join('');
 }
 
